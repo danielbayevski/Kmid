@@ -35,7 +35,7 @@ def save_file(path, pred, startrows=None, endrows=None):
     # startRow – first row to save
     # endRow – last row to load, or the last of file, the minimum
     # TODO:find better way to partially save file,
-    #  dont want to take too much memory
+    #  dont want to take too much memory, or time
     if path[-5:] == ".xlsx":
         temp = pd.read_excel(path, nrows=endrows - startrows, skiprows=startrows)
         new_path = path[:-5] + "_new" + path[-5:]
