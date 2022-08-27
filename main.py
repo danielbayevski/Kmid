@@ -5,16 +5,15 @@ from sklearn_extra.cluster import KMedoids
 import pandas as pd
 import sys
 DATABUFFER = 268435456 # size of quarter of a gigabyte
-import numpy
 
-def decide_row_num_halt(path,cols=None):
-    if path[-5:] == ".xlsx" or path[-4:] == ".xls":
-        temp = pd.read_excel(path,usecols=cols,nrows=1)
-    elif path[-4:] == ".csv":
-        temp=pd.read_csv(path,usecols=cols,nrows=1)
-    else:
-        return
-    row_num= DATABUFFER/ sys.getsizeof(temp)
+# def decide_row_num_halt(path,cols=None):
+#     if path[-5:] == ".xlsx" or path[-4:] == ".xls":
+#         temp = pd.read_excel(path,usecols=cols,nrows=1)
+#     elif path[-4:] == ".csv":
+#         temp=pd.read_csv(path,usecols=cols,nrows=1)
+#     else:
+#         return
+#     row_num= DATABUFFER/ sys.getsizeof(temp)
 
 
 def load_data(path,startrows=None,endrows=None,cols=None):
@@ -30,7 +29,13 @@ def load_data(path,startrows=None,endrows=None,cols=None):
     return temp
 
 def save_file(path, pred, startrows=None, endrows=None):
-    # TODO:find better way to partially save file, time and memory check
+    # save_data(path, startRow, endRow)
+    # path – path to the file to load to,
+    #               or create a blank file, titled “path_new.csv/xls”
+    # startRow – first row to save
+    # endRow – last row to load, or the last of file, the minimum
+    # TODO:find better way to partially save file,
+    #  dont want to take too much memory
     if path[-5:] == ".xlsx":
         temp = pd.read_excel(path, nrows=endrows - startrows, skiprows=startrows)
         new_path = path[:-5] + "_new" + path[-5:]
@@ -48,6 +53,11 @@ def save_file(path, pred, startrows=None, endrows=None):
         temp.to_csv(new_path)
 
 
+#__________________________________________
+#from here on is a bit of a mess, dont read if you value your sanity
+#and by mess i mean incomplete functions and trial and error
+#__________________________________________
+
 def get_time_replace_reduct_cols(data):
     #get_time_replace_reduct_cols(data) -> timeCols,replaceDict,colNums
     # data – data we work with currently
@@ -57,20 +67,20 @@ def get_time_replace_reduct_cols(data):
     timeCols= []
     replaceDict = []
     colNums = []
-    row = data[:][0]
-    colLen = len(data)
-    for i,val in enumerate(row):
-        #check for OTP
-        if type(val) == 'string':
-            things =[]
-            for j in data[:][i]:
-                if not (j in things):
-                    if len(things)>= colLen/2:
-                        break
-                    things.insert(0,j)
+    # row = data[:][0]
+    # colLen = len(data)
+    # for i,val in enumerate(row):
+    #     #check for OTP
+    #     if type(val) == 'string':
+    #         things =[]
+    #         for j in data[:][i]:
+    #             if not (j in things):
+    #                 if len(things)>= colLen/2:
+    #                     break
+    #                 things.insert(0,j)
 
 
-    return columns
+    return timeCols,replaceDict,colNums
 
 
 def augment_data(data): #todo: aguament data then PCA it to death
@@ -83,30 +93,30 @@ def augment_data(data): #todo: aguament data then PCA it to death
 
 
 def main(args):
-    #assert args.data_path is a real file with ending csv,xls xslx, and that it can be loaded and read
-    path = args.data_path
-    row_num = decide_row_num_halt(path)
-    data = load_data(path,row_num)
-    skip_columns = get_reduced_data_columns(data)
-    row_num = decide_row_num_halt(path,skip_columns)
-    K=args.clusters_num
-
-    model = KMedoids(K)
-    data=load_data(path, row_num,cols=skip_columns)
-    data = augment_data(data)
-    model.fit(data)
-    prediction = model.predict(data)
-
-    save_file(path, prediction)
-
-    i=1
-    while True:
-        data=augment_data(load_data(path,row_num*(i+1),row_num*i,skip_columns))
-        if (data == None):
-            break
-        prediction = model.predict(data)
-        save_file(path, prediction, row_num * (i))
-
+    # #assert args.data_path is a real file with ending csv,xls xslx, and that it can be loaded and read
+    # path = args.data_path
+    # row_num = decide_row_num_halt(path)
+    # data = load_data(path,row_num)
+    # skip_columns = get_reduced_data_columns(data)
+    # row_num = decide_row_num_halt(path,skip_columns)
+    # K=args.clusters_num
+    #
+    # model = KMedoids(K)
+    # data=load_data(path, row_num,cols=skip_columns)
+    # data = augment_data(data)
+    # model.fit(data)
+    # prediction = model.predict(data)
+    #
+    # save_file(path, prediction)
+    #
+    # i=1
+    # while True:
+    #     data=augment_data(load_data(path,row_num*(i+1),row_num*i,skip_columns))
+    #     if (data == None):
+    #         break
+    #     prediction = model.predict(data)
+    #     save_file(path, prediction, row_num * (i))
+    pass
 
 
 
