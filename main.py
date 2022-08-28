@@ -6,14 +6,7 @@ import pandas as pd
 import sys
 DATABUFFER = 268435456 # size of quarter of a gigabyte
 
-# def decide_row_num_halt(path,cols=None):
-#     if path[-5:] == ".xlsx" or path[-4:] == ".xls":
-#         temp = pd.read_excel(path,usecols=cols,nrows=1)
-#     elif path[-4:] == ".csv":
-#         temp=pd.read_csv(path,usecols=cols,nrows=1)
-#     else:
-#         return
-#     row_num= DATABUFFER/ sys.getsizeof(temp)
+
 
 
 def load_data(path,startrows=None,endrows=None,cols=None):
@@ -22,10 +15,11 @@ def load_data(path,startrows=None,endrows=None,cols=None):
     # endRow – last row to load, or the last of file, the minimum
     # cols – columns to load, there may be columns we would not want to load as they are useless
     # data – return the loaded partial file
+    row_num = endrows-startrows if startrows else None
     if path[-5:] == ".xlsx" or path[-4:] == ".xls":
-        temp = pd.read_excel(path,usecols=cols,nrows=endrows-startrows,skiprows=startrows)
+        temp = pd.read_excel(path,usecols=cols,nrows=row_num,skiprows=startrows)
     elif path[-4:] == ".csv":
-        temp=pd.read_csv(path,usecols=cols,nrows=endrows-startrows,skiprows=startrows)
+        temp=pd.read_csv(path,usecols=cols,nrows=row_num,skiprows=startrows)
     return temp
 
 def save_file(path, pred, startrows=None, endrows=None):
@@ -53,10 +47,14 @@ def save_file(path, pred, startrows=None, endrows=None):
         temp.to_csv(new_path)
 
 
-#__________________________________________
-#from here on is a bit of a mess, dont read if you value your sanity
-#and by mess i mean incomplete functions and trial and error
-#__________________________________________
+def decide_row_num_halt(path,cols=None):
+    #decide how many rows can you work with at atime, depends on the DATABUFFER
+    if path[-5:] == ".xlsx" or path[-4:] == ".xls":
+        temp = pd.read_excel(path,usecols=cols,nrows=1)
+    elif path[-4:] == ".csv":
+        temp=pd.read_csv(path,usecols=cols,nrows=1)
+    return round(DATABUFFER/ sys.getsizeof(temp))
+
 
 def get_time_replace_reduct_cols(data):
     #get_time_replace_reduct_cols(data) -> timeCols,replaceDict,colNums
@@ -67,18 +65,27 @@ def get_time_replace_reduct_cols(data):
     timeCols= []
     replaceDict = []
     colNums = []
-    # row = data[:][0]
-    # colLen = len(data)
-    # for i,val in enumerate(row):
-    #     #check for OTP
-    #     if type(val) == 'string':
-    #         things =[]
-    #         for j in data[:][i]:
-    #             if not (j in things):
-    #                 if len(things)>= colLen/2:
-    #                     break
-    #                 things.insert(0,j)
-
+    row = data.iloc[0]
+    colLen = len(data)
+    for i,col in enumerate(data.columns):
+        #check for OTP
+        if isinstance(row[col],str) :
+            #TODO:add time check
+            things =[]
+            for j in data[col]:
+                if not (j in things):
+                    if len(things)>= colLen/2:
+                        break
+                    things.append(j)
+            if len(things) < colLen / 2:
+                colNums.append(i)
+                dictionay={}
+                for j, thing in enumerate(things):
+                    dictionay.update({thing:j})
+                replaceDict.append((col,dictionay.copy()))
+                colNums.append(i)
+        else:
+            colNums.append(i)
 
     return timeCols,replaceDict,colNums
 
@@ -89,16 +96,18 @@ def augment_data(data): #todo: aguament data then PCA it to death
 
 
 
-
+#_____________________________
+#main just to check if the funcions work properly
+#______________________________
 
 
 def main(args):
-    # #assert args.data_path is a real file with ending csv,xls xslx, and that it can be loaded and read
-    # path = args.data_path
-    # row_num = decide_row_num_halt(path)
-    # data = load_data(path,row_num)
-    # skip_columns = get_reduced_data_columns(data)
-    # row_num = decide_row_num_halt(path,skip_columns)
+    # TODO: add assert args.data_path is a real file with ending csv,xls xslx, and that it can be loaded and read
+    path = args.data_path
+    row_num = decide_row_num_halt(path)
+    data = load_data(path,endrows=row_num)
+    timeCol,replaceDict,colNum = get_time_replace_reduct_cols(data)
+    row_num = decide_row_num_halt(path,colNum)
     # K=args.clusters_num
     #
     # model = KMedoids(K)
