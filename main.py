@@ -10,7 +10,7 @@ import pandas as pd
 import sys
 import psutil
 import math
-DATABUFFER = math.sqrt(psutil.virtual_memory().free) # 8 MB
+DATABUFFER = 16*math.sqrt(psutil.virtual_memory().free) # 8 MB
 # import datetime
 
 
@@ -22,10 +22,18 @@ def load_data(path,startrows=None,endrows=None,cols=None):
     # cols – columns to load, there may be columns we would not want to load as they are useless
     # data – return the loaded partial file
     row_num = endrows-startrows if startrows else endrows
-    if path[-5:] == ".xlsx" or path[-4:] == ".xls":
-        temp = pd.read_excel(path,usecols=cols,nrows=row_num,skiprows=startrows)
-    elif path[-4:] == ".csv":
-        temp=pd.read_csv(path,usecols=cols,nrows=row_num,skiprows=startrows)
+    try:
+        if path[-5:] == ".xlsx" or path[-4:] == ".xls":
+            header =pd.read_excel(path,usecols=cols,nrows=1)
+            temp = pd.read_excel(path,usecols=cols,nrows=row_num,skiprows=startrows)
+            temp.columns = header.columns
+        elif path[-4:] == ".csv":
+            header = pd.read_csv(path, usecols=cols, nrows=1)
+            temp=pd.read_csv(path,usecols=cols,nrows=row_num,skiprows=startrows)
+            temp.columns = header.columns
+    except:
+        temp = pd.DataFrame()
+
     return temp
 
 def save_file(path, pred, startrows=None, endrows=None):
@@ -36,21 +44,17 @@ def save_file(path, pred, startrows=None, endrows=None):
     # endRow – last row to load, or the last of file, the minimum
     # TODO:find better way to partially save file,
     #  dont want to take too much memory
+    temp = load_data(path, startrows, endrows)
+    temp["grouping"] = pred.tolist()
     if path[-5:] == ".xlsx":
-        temp = pd.read_excel(path, nrows=endrows - startrows, skiprows=startrows)
         new_path = path[:-5] + "_new" + path[-5:]
-        temp["grouping"] = pred.tolist()
-        temp.to_excel(new_path)
+        temp.to_excel(new_path,mode='a')# temp.to_excel(new_path,index=[i for i in range(startrows,endrows)])
     elif path[-4:] == ".xls":
-        temp = pd.read_excel(path, nrows=endrows - startrows, skiprows=startrows)
         new_path = path[:-4] + "_new" + path[-4:]
-        temp["grouping"] = pred.tolist()
-        temp.to_excel(new_path)
+        temp.to_excel(new_path,mode='a')
     elif path[-4:] == ".csv":
-        temp = pd.read_csv(path, nrows=endrows - startrows, skiprows=startrows)
         new_path = path[:-4] + "_new" + path[-4:]
-        temp["grouping"] = pred.tolist()
-        temp.to_csv(new_path)
+        temp.to_csv(new_path,mode='a')
 
 
 def decide_row_num_halt(path,cols=None):
@@ -62,41 +66,68 @@ def decide_row_num_halt(path,cols=None):
     return round(DATABUFFER/ sys.getsizeof(temp))
 
 
-def get_time_replace_reduct_cols(data):
+def get_time_replace_reduct_cols(path,rowNum):
     #get_time_replace_reduct_cols(data) -> timeCols,replaceDict,colNums
     # data – data we work with currently
     # timeCols – all columns with timestamps
     # replaceDict  - list of columns and dictionaries to replace their values with
     # colNums – list of columns to load, as some of them are useless, example:  personal numbers, passwords and OTP
-    timeCols= []
-    replaceDict = []
+
+    data = load_data(path, endrows=rowNum)
+    timeCols = []
+    replaceDict = {}
     colNums = []
-    row = data.iloc[0]
-    colLen = len(data.axes[1])
+    numberTypes = numpy.array(["int8","int16","int32","int64","uint8","uint16","uint64","uint32","float32","float64"])
+    colLen = len(data.axes[0])
+    rowsForSingleColumn = decide_row_num_halt(path,cols=[0])
     for i,col in enumerate(data.columns):
         if data[col].dtype.name[:8]=="datetime":
             timeCols.append(col)
             colNums.append(i)
 
         #check for OTP
-        elif isinstance(row[col],str) :
-
-            things =[]
-            for j in data[col]:
-                if not (j in things):
-                    if len(things)>= colLen:
-                        break
-                    things.append(j)
-            if len(things) < colLen :
-
-                dictionay={}
-                for j, thing in enumerate(things):
-                    dictionay.update({thing:j})
-                replaceDict.append((col,dictionay.copy()))
-                colNums.append(i)
+        elif (data[col].values.dtype== numberTypes).any() :
+            colNums.append(i)
         else:
             colNums.append(i)
-
+            p = 0
+            data1 = load_data(path, endrows=rowsForSingleColumn, cols=[i])
+            while not data1.empty:
+                for col in data1.columns:
+                    T = 0
+                    F = 0
+                    things = []
+                    numbers = []
+                    for thing in data1[col].unique():
+                        if isinstance(thing,str):
+                            try:
+                                float(thing.replace(',', ''))
+                                T+=1
+                                numbers.append(thing)
+                            except:
+                                things.append(thing)
+                                F += 1
+                            continue
+                        if (thing.dtype == numberTypes).any():
+                            T += 1
+                        else:
+                            things.append(i)
+                            F += 1
+                    if T / (T + F) > 0.8:
+                        dictionary = replaceDict.get(col) if not replaceDict.get(col) == None else {}
+                        for thing in things:
+                            dictionary.update({thing: 0})
+                        for num in numbers:
+                            dictionary.update({num: float(num.replace(',', ''))})
+                        replaceDict.update({col:  dictionary.copy()})
+                    else:
+                        dictionary = replaceDict.get(col) if not replaceDict.get(col) == None else {}
+                        for thing in data1[col].unique():
+                            dictionary.update({thing: len(dictionary)})
+                        replaceDict.update({col:  dictionary.copy()})
+                data1 = load_data(path, startrows=rowsForSingleColumn * p, endrows=rowsForSingleColumn * (1 + p),
+                                 cols=[i])
+                p += 1
     return timeCols,replaceDict,colNums
 
 
@@ -113,7 +144,7 @@ def augment_data(data,timeCols,replaceDict,lastLog):
     #lastLog - dictionary of the last timestamp an id had
     # augmented_data – data, with timeCols replaced with the intervals between them, columns that are in the replaceDict are replaced with the integer for them
     for col in replaceDict:
-        data=data.replace({col[0]:col[1]})
+        data=data.replace(replaceDict[col])
 
     if len(timeCols)==0:
         return data, lastLog
@@ -142,11 +173,9 @@ def getMedoidsModel(data,K):
     # therefore two options: use first iteration and pray all groups are represented
     # or find all mediod points for each iteration, then find the mediod for each group
     # it can be done though with much smaller groups
-    maxIterations=10
+    maxIterations=30
     model = KMedoids(K,max_iter=maxIterations,init='k-medoids++')
-    t=time.time()
     model.fit(data)
-    print(str(time.time()-t))
     return model
 
 def predictGrouping (data,model):
@@ -164,45 +193,50 @@ def predictGrouping (data,model):
 #main just to check if the funcions work properly
 #______________________________
 
-
 def main(args):
     path = args.data_path
-    assert os.path.isfile(path),"no file"
+    assert os.path.isfile(path), "no file"
     assert path[-5:] == ".xlsx" or path[-4:] == ".xls" or path[-4:] == ".csv", "not excel or csv"
     try:
         row_num = decide_row_num_halt(path)
     except:
         print("failed to open file")
         return
-    data = load_data(path,endrows=row_num)
-    timeCol,replaceDict,colNum = get_time_replace_reduct_cols(data)
-    row_num = decide_row_num_halt(path,colNum)
-    data = load_data(path, endrows=row_num,cols=colNum)
-    lastLog={}
-    data,lastLog = augment_data(data,timeCol,replaceDict,lastLog)
-    K=round(args.clusters_num)
-    model = getMedoidsModel(data,K)
-    i=0
+    # data = load_data(path,endrows=row_num)
+    t = time.time()
+    timeCol, replaceDict, colNum = get_time_replace_reduct_cols(path, row_num)
+    print("dictionaries: " + str(time.time() - t))
+
+    row_num = decide_row_num_halt(path, colNum)
+    lastLog = {}
+    K = round(args.clusters_num)
+    clusterPoints = pd.DataFrame()
+    i = 0
+    whileFlag = True
+    data = load_data(path, row_num * (i), row_num * (i + 1))
+    t = time.time()
+
+    while not data.empty or whileFlag:
+        data, lastLog = augment_data(data, timeCol, replaceDict, lastLog)
+        model = getMedoidsModel(data, K)
+        clusterPoints = pd.concat([clusterPoints, data.iloc[model.medoid_indices_]])
+        i += 1
+        data = load_data(path, row_num * (i), row_num * (i + 1), cols=colNum)
+        whileFlag = False
+    print("model training: " + str(time.time() - t))
+    lastLog = {}
+    model = getMedoidsModel(clusterPoints, K)
+    i = 0
+    data = load_data(path, row_num * (i), row_num * (i + 1))
+    t = time.time()
+
     while not data.empty:
-        prediction = predictGrouping(data,model)
-        save_file(path, prediction,row_num*(i),row_num*(i+1))
-        data = load_data(path,row_num*(i+1),row_num*(i+2))
-        data,lastLog = augment_data(data,timeCol,replaceDict,lastLog)
-
-    #
-    #
-    #
-    # i=1
-    # while True:
-    #     data=augment_data(load_data(path,row_num*(i+1),row_num*i,skip_columns))
-    #     if (data == None):
-    #         break
-    #     prediction = model.predict(data)
-    #     save_file(path, prediction, row_num * (i))
-
-
-
-
+        data, lastLog = augment_data(data, timeCol, replaceDict, lastLog)
+        prediction = predictGrouping(data, model)
+        save_file(path, prediction, row_num * (i), row_num * (i + 1))
+        data = load_data(path, row_num * (i + 1), row_num * (i + 2))
+        i += 1
+    print("save: " + str(time.time() - t))
 
 
 
